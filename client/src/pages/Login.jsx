@@ -1,13 +1,16 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Loader } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
+import axios from "axios";
+import { Loader } from 'lucide-react'
+import { Canvas } from '@react-three/fiber';
+import Shirt from '../components/Shirt';
+import { OrbitControls } from "@react-three/drei";
 
 const Login = () => {
     const [formData, setFormData] = useState({ email: "", password: "" });
     const [error, setError] = useState("");
     const navigate = useNavigate();
-    const { login, loading } = useAuth();
+    const [loading, setLoading] = useState(false);
 
     const handleChange = (e) => {
         setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -15,18 +18,26 @@ const Login = () => {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        const result = await login(formData);
-        
-        if (result.success) {
-            navigate("/dashboard");
-        } else {
-            setError(result.error);
+        try {
+            setLoading(true);
+            await axios.post("Backend Link Here!!!!!!!!!!!!!", formData, { withCredentials: true });
+            navigate("/");
+        } catch (error) {
+            setError(error.response?.data?.message || "Login failed");
         }
     };
 
     return (
         <div className="flex h-screen">
-            <div className="flex-3 bg-[#6f00c4] flex items-center justify-center overflow-hidden">
+            <div className="flex-3 bg-[#6f00c4] flex flex-col items-center justify-center overflow-hidden">
+                <div className="mb-8 w-[32rem] h-[32rem] rounded-lg flex items-center justify-center">
+                    <Canvas camera={{ position: [0, 0, 2.2], fov: 50 }} gl={{ alpha: true }}>
+                        <OrbitControls/>
+                        <ambientLight intensity={0.7} />
+                        <directionalLight position={[2, 2, 2]} intensity={0.7} />
+                        <Shirt textureUrl={'/tshirtexture.jpg'} />
+                    </Canvas>
+                </div>
                 <img src="/login-bg.png" alt="" width={800}/>
             </div>
             <div className="flex-2 font-mono font-bold flex flex-col bg-gray-200 text-black items-center justify-center">
@@ -51,12 +62,11 @@ const Login = () => {
                         required
                     />
                     {error && <p className="text-red-500">{error}</p>}
-                    <button type="submit" className="bg-[#8f00ff] text-white text-2xl p-2 text-center rounded-[10px] cursor-pointer flex items-center justify-center gap-2">
-                        Login {loading && <Loader size={15} className="animate-spin"/>}
-                    </button>
+                    <button type="submit" className="bg-[#8f00ff] text-white text-2xl p-2 text-center rounded-[10px] cursor-pointer flex items-center justify-center gap-2">Login {loading && <Loader size={15}/>}</button>
                     <p>Don't have an account? <Link to={'/register'} className="underline">Register</Link></p>
                 </form>
             </div>
+            
         </div>
     );
 };
