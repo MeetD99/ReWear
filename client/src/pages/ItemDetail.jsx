@@ -37,7 +37,7 @@ const ItemDetail = () => {
 
   // Use the first image for main display and 3D texture
   const mainImage = product.images && product.images.length > 0 ? product.images[0] : '';
-  const textureUrl = mainImage;
+  const textureUrl = product.texture && product.texture.length > 0 ? product.texture : '';
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">

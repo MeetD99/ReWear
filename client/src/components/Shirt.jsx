@@ -33,12 +33,12 @@ const Shirt = ({ textureUrl }) => {
                     depthWrite={true}
                 /> */}
 
-            <Decal 
-                position={[0, 0, 0]}
-                rotation={[0, 0, 0]}
-                scale={1}
-                map={logoTexture}
-            />
+                <Decal 
+                    position={[0, 0, 0]}
+                    rotation={[0, 0, 0]}
+                    scale={1}
+                    map={logoTexture}
+                />
             </mesh>
         </group>
     )
