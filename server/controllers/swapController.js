@@ -1,0 +1,258 @@
+const SwapRequest = require('../models/SwapRequest');
+const Item = require('../models/Item');
+const User = require('../models/User');
+
+// @desc    Create swap request
+// @route   POST /api/swaps
+// @access  Private
+exports.createSwapRequest = async (req, res, next) => {
+  try {
+    // Add requester to body
+    req.body.requester = req.user.id;
+
+    // Check if item exists and is available
+    const item = await Item.findById(req.body.item);
+    if (!item) {
+      return res.status(404).json({ success: false, error: 'Item not found' });
+    }
+
+    if (!item.isAvailable || !item.isApproved) {
+      return res.status(400).json({ success: false, error: 'Item is not available for swap' });
+    }
+
+    // Check if the user is trying to swap their own item
+    if (item.uploader.toString() === req.user.id) {
+      return res.status(400).json({ success: false, error: 'You cannot request your own item' });
+    }
+
+    // If swap type is 'swap', check if offered item exists and belongs to requester
+    if (req.body.type === 'swap' && req.body.offeredItem) {
+      const offeredItem = await Item.findById(req.body.offeredItem);
+      
+      if (!offeredItem) {
+        return res.status(404).json({ success: false, error: 'Offered item not found' });
+      }
+
+      if (offeredItem.uploader.toString() !== req.user.id) {
+        return res.status(401).json({ success: false, error: 'You can only offer your own items' });
+      }
+
+      if (!offeredItem.isAvailable || !offeredItem.isApproved) {
+        return res.status(400).json({ success: false, error: 'Offered item is not available for swap' });
+      }
+    }
+
+    // If swap type is 'points', check if user has enough points
+    if (req.body.type === 'points') {
+      const user = await User.findById(req.user.id);
+      
+      if (user.points < item.pointValue) {
+        return res.status(400).json({ 
+          success: false, 
+          error: `Not enough points. You have ${user.points} points, but need ${item.pointValue}` 
+        });
+      }
+
+      // Set points offered to item point value
+      req.body.pointsOffered = item.pointValue;
+    }
+
+    // Create swap request
+    const swapRequest = await SwapRequest.create(req.body);
+
+    res.status(201).json({
+      success: true,
+      data: swapRequest
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get all swap requests
+// @route   GET /api/swaps
+// @access  Private
+exports.getSwapRequests = async (req, res, next) => {
+  try {
+    // Get swap requests where user is requester
+    const swapRequests = await SwapRequest.find({ requester: req.user.id })
+      .populate('item')
+      .populate('offeredItem');
+
+    res.status(200).json({
+      success: true,
+      count: swapRequests.length,
+      data: swapRequests
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get single swap request
+// @route   GET /api/swaps/:id
+// @access  Private
+exports.getSwapRequest = async (req, res, next) => {
+  try {
+    const swapRequest = await SwapRequest.findById(req.params.id)
+      .populate('item')
+      .populate('offeredItem')
+      .populate('requester', 'name email');
+
+    if (!swapRequest) {
+      return res.status(404).json({ success: false, error: 'Swap request not found' });
+    }
+
+    // Check if user is requester or item owner
+    const item = await Item.findById(swapRequest.item);
+    
+    if (swapRequest.requester._id.toString() !== req.user.id && 
+        item.uploader.toString() !== req.user.id && 
+        !req.user.isAdmin) {
+      return res.status(401).json({ success: false, error: 'Not authorized to view this swap request' });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: swapRequest
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Update swap request status
+// @route   PUT /api/swaps/:id
+// @access  Private
+exports.updateSwapRequestStatus = async (req, res, next) => {
+  try {
+    const { status } = req.body;
+
+    if (!['pending', 'approved', 'rejected', 'completed'].includes(status)) {
+      return res.status(400).json({ success: false, error: 'Invalid status' });
+    }
+
+    let swapRequest = await SwapRequest.findById(req.params.id);
+
+    if (!swapRequest) {
+      return res.status(404).json({ success: false, error: 'Swap request not found' });
+    }
+
+    // Get the item
+    const item = await Item.findById(swapRequest.item);
+    
+    if (!item) {
+      return res.status(404).json({ success: false, error: 'Item not found' });
+    }
+
+    // Check if user is item owner
+    if (item.uploader.toString() !== req.user.id && !req.user.isAdmin) {
+      return res.status(401).json({ success: false, error: 'Not authorized to update this swap request' });
+    }
+
+    // Handle status change logic
+    if (status === 'approved') {
+      // Mark item as unavailable
+      item.isAvailable = false;
+      await item.save();
+
+      // If swap type is 'swap', mark offered item as unavailable
+      if (swapRequest.type === 'swap' && swapRequest.offeredItem) {
+        const offeredItem = await Item.findById(swapRequest.offeredItem);
+        if (offeredItem) {
+          offeredItem.isAvailable = false;
+          await offeredItem.save();
+        }
+      }
+    } else if (status === 'completed') {
+      // Only allow completing already approved requests
+      if (swapRequest.status !== 'approved') {
+        return res.status(400).json({ 
+          success: false, 
+          error: 'Can only complete approved swap requests' 
+        });
+      }
+
+      // If swap type is 'points', transfer points from requester to item owner
+      if (swapRequest.type === 'points' && swapRequest.pointsOffered) {
+        const requester = await User.findById(swapRequest.requester);
+        const itemOwner = await User.findById(item.uploader);
+
+        if (requester && itemOwner) {
+          // Deduct points from requester
+          requester.points -= swapRequest.pointsOffered;
+          await requester.save();
+
+          // Add points to item owner
+          itemOwner.points += swapRequest.pointsOffered;
+          await itemOwner.save();
+        }
+      }
+
+      // Set completed date
+      swapRequest.completedAt = Date.now();
+    } else if (status === 'rejected') {
+      // If the request was previously approved, make items available again
+      if (swapRequest.status === 'approved') {
+        // Make item available again
+        item.isAvailable = true;
+        await item.save();
+
+        // If swap type is 'swap', make offered item available again
+        if (swapRequest.type === 'swap' && swapRequest.offeredItem) {
+          const offeredItem = await Item.findById(swapRequest.offeredItem);
+          if (offeredItem) {
+            offeredItem.isAvailable = true;
+            await offeredItem.save();
+          }
+        }
+      }
+    }
+
+    // Update swap request status
+    swapRequest.status = status;
+    await swapRequest.save();
+
+    res.status(200).json({
+      success: true,
+      data: swapRequest
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Cancel swap request (by requester)
+// @route   DELETE /api/swaps/:id
+// @access  Private
+exports.cancelSwapRequest = async (req, res, next) => {
+  try {
+    const swapRequest = await SwapRequest.findById(req.params.id);
+
+    if (!swapRequest) {
+      return res.status(404).json({ success: false, error: 'Swap request not found' });
+    }
+
+    // Check if user is requester
+    if (swapRequest.requester.toString() !== req.user.id && !req.user.isAdmin) {
+      return res.status(401).json({ success: false, error: 'Not authorized to cancel this swap request' });
+    }
+
+    // Only allow canceling pending requests
+    if (swapRequest.status !== 'pending') {
+      return res.status(400).json({ 
+        success: false, 
+        error: `Cannot cancel a swap request with status: ${swapRequest.status}` 
+      });
+    }
+
+    await swapRequest.deleteOne();
+
+    res.status(200).json({
+      success: true,
+      data: {}
+    });
+  } catch (error) {
+    next(error);
+  }
+}; 
