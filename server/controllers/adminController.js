@@ -128,6 +128,15 @@ exports.approveRejectItem = async (req, res, next) => {
       return res.status(404).json({ success: false, error: 'Item not found' });
     }
 
+    // If item is approved, reward user with 10 points
+    if (isApproved) {
+      const user = await User.findById(item.uploader._id);
+      if (user) {
+        user.points += 10;
+        await user.save();
+      }
+    }
+
     res.status(200).json({
       success: true,
       data: item

@@ -179,6 +179,14 @@ exports.updateSwapRequestStatus = async (req, res, next) => {
         const itemOwner = await User.findById(item.uploader);
 
         if (requester && itemOwner) {
+          // Check if requester has enough points
+          if (requester.points < swapRequest.pointsOffered) {
+            return res.status(400).json({ 
+              success: false, 
+              error: `Not enough points. User has ${requester.points} points, but needs ${swapRequest.pointsOffered}` 
+            });
+          }
+
           // Deduct points from requester
           requester.points -= swapRequest.pointsOffered;
           await requester.save();
@@ -186,6 +194,38 @@ exports.updateSwapRequestStatus = async (req, res, next) => {
           // Add points to item owner
           itemOwner.points += swapRequest.pointsOffered;
           await itemOwner.save();
+          
+          // Transfer item ownership
+          item.uploader = swapRequest.requester;
+          await item.save();
+        }
+      } else if (swapRequest.type === 'swap' && swapRequest.offeredItem) {
+        // For swap type, transfer ownership of both items
+        const offeredItem = await Item.findById(swapRequest.offeredItem);
+        
+        if (offeredItem) {
+          // Get original owners
+          const itemOwner = item.uploader;
+          const offeredItemOwner = offeredItem.uploader;
+          
+          // Swap ownership
+          item.uploader = offeredItemOwner;
+          offeredItem.uploader = itemOwner;
+          
+          // Save both items
+          await item.save();
+          await offeredItem.save();
+          
+          // Reward both users with 10 points for completed swap
+          const requester = await User.findById(swapRequest.requester);
+          const owner = await User.findById(itemOwner);
+          
+          if (requester && owner) {
+            requester.points += 10;
+            owner.points += 10;
+            await requester.save();
+            await owner.save();
+          }
         }
       }
 
