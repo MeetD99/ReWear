@@ -11,8 +11,18 @@ router.use(protect);
 // @desc    Upload image
 // @route   POST /api/upload
 // @access  Private
-router.post('/', upload.single('image'), (req, res) => {
-  try {
+router.post('/', (req, res) => {
+  upload.single('image')(req, res, (err) => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ 
+          success: false, 
+          error: 'File size too large. Max size is 5MB.' 
+        });
+      }
+      return res.status(400).json({ success: false, error: err.message });
+    }
+
     if (!req.file) {
       return res.status(400).json({ success: false, error: 'Please upload a file' });
     }
@@ -24,16 +34,24 @@ router.post('/', upload.single('image'), (req, res) => {
         filePath: `/uploads/${req.file.filename}`
       }
     });
-  } catch (error) {
-    res.status(500).json({ success: false, error: 'Server error' });
-  }
+  });
 });
 
 // @desc    Upload multiple images
 // @route   POST /api/upload/multiple
 // @access  Private
-router.post('/multiple', upload.array('images', 5), (req, res) => {
-  try {
+router.post('/multiple', (req, res) => {
+  upload.array('images', 5)(req, res, (err) => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ 
+          success: false, 
+          error: 'File size too large. Max size is 5MB per file.' 
+        });
+      }
+      return res.status(400).json({ success: false, error: err.message });
+    }
+
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({ success: false, error: 'Please upload at least one file' });
     }
@@ -48,9 +66,7 @@ router.post('/multiple', upload.array('images', 5), (req, res) => {
       count: fileData.length,
       data: fileData
     });
-  } catch (error) {
-    res.status(500).json({ success: false, error: 'Server error' });
-  }
+  });
 });
 
 module.exports = router; 

@@ -1,12 +1,28 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Menu, X, User, LogOut, Package, Plus, Home, ShoppingBag, Settings } from 'lucide-react';
 
 const Navbar = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const { user, logout, isAdmin } = useAuth();
   const navigate = useNavigate();
+  const userMenuRef = useRef(null);
+  
+  // Close the dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target)) {
+        setIsUserMenuOpen(false);
+      }
+    };
+    
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   const handleLogout = async () => {
     await logout();
@@ -50,30 +66,39 @@ const Navbar = () => {
           {/* User Menu (Desktop) */}
           <div className="hidden md:flex items-center">
             {user ? (
-              <div className="relative group">
-                <button className="flex items-center space-x-2 text-gray-700 hover:text-[#8f00ff] px-3 py-2 rounded-md">
+              <div className="relative" ref={userMenuRef}>
+                <button 
+                  className="flex items-center space-x-2 text-gray-700 hover:text-[#8f00ff] px-3 py-2 rounded-md"
+                  onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+                >
                   <User size={20} />
                   <span>{user.name}</span>
                 </button>
-                <div className="absolute right-0 w-48 mt-2 py-2 bg-white rounded-md shadow-xl z-20 hidden group-hover:block">
-                  <div className="px-4 py-2 text-sm text-gray-500 border-b">
-                    <div>{user.name}</div>
-                    <div className="text-xs">{user.email}</div>
-                    <div className="text-xs font-semibold mt-1">Points: {user.points}</div>
+                {isUserMenuOpen && (
+                  <div className="absolute right-0 w-48 mt-2 py-2 bg-white rounded-md shadow-xl z-20">
+                    <div className="px-4 py-2 text-sm text-gray-500 border-b">
+                      <div>{user.name}</div>
+                      <div className="text-xs">{user.email}</div>
+                      <div className="text-xs font-semibold mt-1">Points: {user.points}</div>
+                    </div>
+                    <Link
+                      to="/dashboard"
+                      className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                      onClick={() => setIsUserMenuOpen(false)}
+                    >
+                      <Package size={16} className="mr-2" /> My Items
+                    </Link>
+                    <button
+                      onClick={() => {
+                        handleLogout();
+                        setIsUserMenuOpen(false);
+                      }}
+                      className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                    >
+                      <LogOut size={16} className="mr-2" /> Logout
+                    </button>
                   </div>
-                  <Link
-                    to="/dashboard"
-                    className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center"
-                  >
-                    <Package size={16} className="mr-2" /> My Items
-                  </Link>
-                  <button
-                    onClick={handleLogout}
-                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center"
-                  >
-                    <LogOut size={16} className="mr-2" /> Logout
-                  </button>
-                </div>
+                )}
               </div>
             ) : (
               <div className="flex items-center space-x-2">

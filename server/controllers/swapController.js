@@ -152,18 +152,70 @@ exports.updateSwapRequestStatus = async (req, res, next) => {
 
     // Handle status change logic
     if (status === 'approved') {
-      // Mark item as unavailable
-      item.isAvailable = false;
-      await item.save();
+      // === Handle approval ===
 
-      // If swap type is 'swap', mark offered item as unavailable
-      if (swapRequest.type === 'swap' && swapRequest.offeredItem) {
-        const offeredItem = await Item.findById(swapRequest.offeredItem);
-        if (offeredItem) {
-          offeredItem.isAvailable = false;
-          await offeredItem.save();
-        }
+      // Prevent double-processing if already approved previously
+      if (swapRequest.status !== 'pending') {
+        return res.status(400).json({ success: false, error: `Cannot approve a swap request with status: ${swapRequest.status}` });
       }
+
+      // Common references
+      const requester = await User.findById(swapRequest.requester);
+      const itemOwner = await User.findById(item.uploader);
+
+      if (!requester || !itemOwner) {
+        return res.status(404).json({ success: false, error: 'User not found' });
+      }
+
+      if (swapRequest.type === 'points') {
+        // --- Points redemption flow ---
+        if (requester.points < item.pointValue) {
+          return res.status(400).json({ success: false, error: `Not enough points. User has ${requester.points} points, but needs ${item.pointValue}` });
+        }
+
+        // Deduct points from requester and credit owner
+        requester.points -= item.pointValue;
+        itemOwner.points += item.pointValue + 10; // reward 10 pts for successful swap
+        await requester.save();
+        await itemOwner.save();
+
+        // Transfer item ownership to requester
+        item.uploader = requester._id;
+        item.isAvailable = true;
+        await item.save();
+      } else if (swapRequest.type === 'swap' && swapRequest.offeredItem) {
+        // --- Direct item swap flow ---
+        const offeredItem = await Item.findById(swapRequest.offeredItem);
+        if (!offeredItem) {
+          return res.status(404).json({ success: false, error: 'Offered item not found' });
+        }
+
+        const offeredItemOwner = await User.findById(offeredItem.uploader);
+        if (!offeredItemOwner) {
+          return res.status(404).json({ success: false, error: 'Offered item owner not found' });
+        }
+
+        // Swap the uploader fields
+        item.uploader = offeredItemOwner._id;
+        offeredItem.uploader = itemOwner._id;
+        
+        // Make both items available to their new owners
+        item.isAvailable = true;
+        offeredItem.isAvailable = true;
+
+        await item.save();
+        await offeredItem.save();
+
+        // Reward both users with 10 points
+        requester.points += 10;
+        itemOwner.points += 10;
+        await requester.save();
+        await itemOwner.save();
+      }
+
+      // Mark item(s) as unavailable for the previous owner to prevent duplicates
+      // (already handled by ownership change and availability flags)
+
     } else if (status === 'completed') {
       // Only allow completing already approved requests
       if (swapRequest.status !== 'approved') {
@@ -195,8 +247,9 @@ exports.updateSwapRequestStatus = async (req, res, next) => {
           itemOwner.points += swapRequest.pointsOffered;
           await itemOwner.save();
           
-          // Transfer item ownership
+          // Transfer item ownership and make it available to the new owner
           item.uploader = swapRequest.requester;
+          item.isAvailable = true;  // Make it available to the new owner
           await item.save();
         }
       } else if (swapRequest.type === 'swap' && swapRequest.offeredItem) {
@@ -208,9 +261,12 @@ exports.updateSwapRequestStatus = async (req, res, next) => {
           const itemOwner = item.uploader;
           const offeredItemOwner = offeredItem.uploader;
           
-          // Swap ownership
+          // Swap ownership and make items available to new owners
           item.uploader = offeredItemOwner;
+          item.isAvailable = true;  // Make it available to the new owner
+          
           offeredItem.uploader = itemOwner;
+          offeredItem.isAvailable = true;  // Make it available to the new owner
           
           // Save both items
           await item.save();
