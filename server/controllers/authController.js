@@ -13,11 +13,12 @@ exports.register = async (req, res, next) => {
       return res.status(400).json({ success: false, error: 'Email already registered' });
     }
 
-    // Create user
+    // Create user with initial 100 points
     const user = await User.create({
       name,
       email,
-      password
+      password,
+      points: 100  // Start with 100 points
     });
 
     sendTokenResponse(user, 201, res);

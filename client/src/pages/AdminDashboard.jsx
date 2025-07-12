@@ -1,193 +1,383 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { adminService } from '../services/api';
+import { useAuth } from '../context/AuthContext';
+import { Loader, Users, Package, BarChart2, Check, X, Eye, Trash, AlertTriangle } from 'lucide-react';
 
 const AdminDashboard = () => {
-  const [activeTab, setActiveTab] = useState('users');
+  const { user, isAdmin } = useAuth();
+  const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState('dashboard');
   const [users, setUsers] = useState([]);
-  const [items, setItems] = useState([]);
+  const [pendingItems, setPendingItems] = useState([]);
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const resUsers = await fetch('/api/admin/users');
-        const resItems = await fetch('/api/admin/items');
+    // Redirect if not admin
+    if (user && !isAdmin()) {
+      navigate('/dashboard');
+      return;
+    }
 
-        const usersData = await resUsers.json();
-        const itemsData = await resItems.json();
+    fetchDashboardData();
+  }, [user, isAdmin, navigate]);
 
-        setUsers(usersData);
-        setItems(itemsData);
-      } catch (error) {
-        console.error('Failed to fetch admin data:', error);
-      }
-    };
+  const fetchDashboardData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
 
-    fetchData();
-  }, []);
+      // Fetch dashboard stats
+      const statsResponse = await adminService.getDashboardStats();
+      setStats(statsResponse.data.data);
 
-  // === Handlers ===
-  const deleteUser = async (userId) => {
-    await fetch(`/api/admin/user/${userId}`, { method: 'DELETE' });
-    setUsers(prev => prev.filter(user => user._id !== userId));
+      // Fetch users
+      const usersResponse = await adminService.getAllUsers();
+      setUsers(usersResponse.data.data);
+
+      // Fetch pending items
+      const pendingItemsResponse = await adminService.getPendingItems();
+      setPendingItems(pendingItemsResponse.data.data);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to load admin dashboard data');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const approveItem = async (itemId) => {
-    await fetch(`/api/admin/item/${itemId}/approve`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ isApproved: true }),
-    });
-    setItems(prev =>
-      prev.map(item =>
-        item._id === itemId ? { ...item, isApproved: true } : item
-      )
+  const handleApproveItem = async (itemId) => {
+    try {
+      setActionLoading(true);
+      await adminService.approveRejectItem(itemId, { isApproved: true });
+      
+      // Refresh pending items
+      const pendingItemsResponse = await adminService.getPendingItems();
+      setPendingItems(pendingItemsResponse.data.data);
+      
+      // Refresh stats
+      const statsResponse = await adminService.getDashboardStats();
+      setStats(statsResponse.data.data);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to approve item');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleRejectItem = async (itemId) => {
+    try {
+      setActionLoading(true);
+      await adminService.approveRejectItem(itemId, { isApproved: false });
+      
+      // Refresh pending items
+      const pendingItemsResponse = await adminService.getPendingItems();
+      setPendingItems(pendingItemsResponse.data.data);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to reject item');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDeleteUser = async (userId) => {
+    if (!window.confirm('Are you sure you want to delete this user?')) return;
+    
+    try {
+      setActionLoading(true);
+      await adminService.deleteUser(userId);
+      
+      // Refresh users
+      const usersResponse = await adminService.getAllUsers();
+      setUsers(usersResponse.data.data);
+      
+      // Refresh stats
+      const statsResponse = await adminService.getDashboardStats();
+      setStats(statsResponse.data.data);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to delete user');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-screen">
+        <Loader size={40} className="animate-spin text-[#8f00ff]" />
+      </div>
     );
-  };
+  }
 
-  const rejectItem = async (itemId) => {
-    await fetch(`/api/admin/item/${itemId}/reject`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ isApproved: false }),
-    });
-    setItems(prev =>
-      prev.map(item =>
-        item._id === itemId ? { ...item, isApproved: false } : item
-      )
-    );
-  };
-
-  const deleteItem = async (itemId) => {
-    await fetch(`/api/admin/item/${itemId}`, { method: 'DELETE' });
-    setItems(prev => prev.filter(item => item._id !== itemId));
-  };
-
-  return (
-    <div className="max-w-6xl mx-auto px-6 py-10">
-      <h1 className="text-3xl font-bold mb-6">Admin Panel</h1>
-
-      {/* Tabs */}
-      <div className="flex gap-4 mb-6">
-        <button
-          onClick={() => setActiveTab('users')}
-          className={`px-6 py-2 rounded-lg font-semibold border ${
-            activeTab === 'users'
-              ? 'bg-indigo-600 text-white'
-              : 'bg-white text-black'
-          }`}
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen">
+        <AlertTriangle size={60} className="text-red-500 mb-4" />
+        <h2 className="text-2xl font-bold mb-2">Error Loading Admin Dashboard</h2>
+        <p className="text-gray-600 mb-4">{error}</p>
+        <button 
+          onClick={fetchDashboardData} 
+          className="bg-[#8f00ff] text-white px-4 py-2 rounded hover:bg-[#6f00c4]"
         >
-          Manage Users
-        </button>
-        <button
-          onClick={() => setActiveTab('items')}
-          className={`px-6 py-2 rounded-lg font-semibold border ${
-            activeTab === 'items'
-              ? 'bg-indigo-600 text-white'
-              : 'bg-white text-black'
-          }`}
-        >
-          Manage Listings
+          Retry
         </button>
       </div>
+    );
+  }
 
-      {/* === User Management === */}
+  return (
+    <div className="container mx-auto px-4 py-8">
+      <h1 className="text-3xl font-bold mb-6">Admin Dashboard</h1>
+
+      {/* Admin Tabs */}
+      <div className="border-b mb-6">
+        <nav className="flex flex-wrap -mb-px">
+          <button
+            className={`mr-8 py-4 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'dashboard'
+                ? 'border-[#8f00ff] text-[#8f00ff]'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+            onClick={() => setActiveTab('dashboard')}
+          >
+            <div className="flex items-center">
+              <BarChart2 size={18} className="mr-2" />
+              Dashboard
+            </div>
+          </button>
+          <button
+            className={`mr-8 py-4 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'users'
+                ? 'border-[#8f00ff] text-[#8f00ff]'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+            onClick={() => setActiveTab('users')}
+          >
+            <div className="flex items-center">
+              <Users size={18} className="mr-2" />
+              Users ({stats?.users || 0})
+            </div>
+          </button>
+          <button
+            className={`mr-8 py-4 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'pending'
+                ? 'border-[#8f00ff] text-[#8f00ff]'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+            onClick={() => setActiveTab('pending')}
+          >
+            <div className="flex items-center">
+              <Package size={18} className="mr-2" />
+              Pending Items ({stats?.items?.pending || 0})
+            </div>
+          </button>
+        </nav>
+      </div>
+
+      {/* Dashboard Stats */}
+      {activeTab === 'dashboard' && stats && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <div className="bg-white rounded-lg shadow p-6">
+            <h3 className="text-gray-500 text-sm font-medium mb-2">Total Users</h3>
+            <p className="text-3xl font-bold">{stats.users}</p>
+          </div>
+          
+          <div className="bg-white rounded-lg shadow p-6">
+            <h3 className="text-gray-500 text-sm font-medium mb-2">Total Items</h3>
+            <p className="text-3xl font-bold">{stats.items.total}</p>
+            <div className="mt-2 text-sm">
+              <span className="text-green-600">{stats.items.approved} approved</span> • 
+              <span className="text-yellow-600 ml-1">{stats.items.pending} pending</span>
+            </div>
+          </div>
+          
+          <div className="bg-white rounded-lg shadow p-6">
+            <h3 className="text-gray-500 text-sm font-medium mb-2">Available Items</h3>
+            <p className="text-3xl font-bold">{stats.items.available}</p>
+            <p className="mt-2 text-sm text-gray-500">Ready for swapping</p>
+          </div>
+          
+          <div className="bg-white rounded-lg shadow p-6">
+            <h3 className="text-gray-500 text-sm font-medium mb-2">Completed Swaps</h3>
+            <p className="text-3xl font-bold">{stats.swaps.completed}</p>
+            <p className="mt-2 text-sm text-gray-500">
+              {stats.swaps.pending} pending requests
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Users Management */}
       {activeTab === 'users' && (
-        <div className="space-y-4">
-          <h2 className="text-xl font-semibold mb-2">All Users</h2>
-          {users.length === 0 ? (
-            <p className="text-gray-500">No users found.</p>
-          ) : (
-            users.map(user => (
-              <div
-                key={user._id}
-                className="flex items-center bg-white p-4 rounded-xl shadow-sm"
-              >
-                <div className="w-14 h-14 bg-gray-300 rounded-full mr-4" />
-                <div className="flex-1">
-                  <p className="font-semibold">{user.name}</p>
-                  <p className="text-sm text-gray-500">{user.email}</p>
-                  <p className="text-sm text-gray-500">Points: {user.points}</p>
-                </div>
-                <div className="space-x-2">
-                  <button
-                    onClick={() => alert('Viewing user details...')}
-                    className="px-4 py-1 bg-blue-500 text-white rounded hover:bg-blue-600"
-                  >
-                    Details
-                  </button>
-                  <button
-                    onClick={() => deleteUser(user._id)}
-                    className="px-4 py-1 bg-red-500 text-white rounded hover:bg-red-600"
-                  >
-                    Remove
-                  </button>
-                </div>
-              </div>
-            ))
+        <div>
+          <div className="bg-white rounded-lg shadow overflow-hidden">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    User
+                  </th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Email
+                  </th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Points
+                  </th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Role
+                  </th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {users.map(user => (
+                  <tr key={user._id}>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="font-medium text-gray-900">{user.name}</div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-500">{user.email}</div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-900">{user.points}</div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                        user.isAdmin ? 'bg-purple-100 text-purple-800' : 'bg-green-100 text-green-800'
+                      }`}>
+                        {user.isAdmin ? 'Admin' : 'User'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <button 
+                        onClick={() => navigate(`/admin/users/${user._id}`)}
+                        className="text-blue-600 hover:text-blue-900 mr-4"
+                      >
+                        View
+                      </button>
+                      {!user.isAdmin && (
+                        <button 
+                          onClick={() => handleDeleteUser(user._id)}
+                          disabled={actionLoading}
+                          className="text-red-600 hover:text-red-900"
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          
+          {users.length === 0 && (
+            <div className="text-center py-8">
+              <p className="text-gray-500">No users found.</p>
+            </div>
           )}
         </div>
       )}
 
-      {/* === Item Management === */}
-      {activeTab === 'items' && (
-        <div className="space-y-4">
-          <h2 className="text-xl font-semibold mb-2">All Listings</h2>
-          {items.length === 0 ? (
-            <p className="text-gray-500">No items listed yet.</p>
+      {/* Pending Items */}
+      {activeTab === 'pending' && (
+        <div>
+          {pendingItems.length === 0 ? (
+            <div className="text-center py-8">
+              <Package size={48} className="mx-auto text-gray-400 mb-4" />
+              <h3 className="text-xl font-medium mb-2">No pending items</h3>
+              <p className="text-gray-500">All items have been reviewed!</p>
+            </div>
           ) : (
-            items.map(item => (
-              <div
-                key={item._id}
-                className="flex items-center bg-white p-4 rounded-xl shadow-sm"
-              >
-                <div className="w-16 h-16 bg-gray-100 rounded-xl mr-4 overflow-hidden">
-                  <img
-                    src={item.images?.[0] || '/placeholder.jpg'}
-                    alt={item.title}
-                    className="object-cover w-full h-full"
-                  />
+            <div className="space-y-4">
+              {pendingItems.map(item => (
+                <div key={item._id} className="bg-white rounded-lg shadow overflow-hidden">
+                  <div className="p-6">
+                    <div className="flex flex-col md:flex-row">
+                      <div className="md:w-1/4 mb-4 md:mb-0">
+                        {item.images && item.images.length > 0 ? (
+                          <img
+                            src={item.images[0].startsWith('http') ? item.images[0] : `http://localhost:5001${item.images[0]}`}
+                            alt={item.title}
+                            className="w-full h-48 object-cover rounded-lg"
+                          />
+                        ) : (
+                          <div className="w-full h-48 bg-gray-200 rounded-lg flex items-center justify-center">
+                            <Package size={40} className="text-gray-400" />
+                          </div>
+                        )}
+                      </div>
+                      
+                      <div className="md:w-3/4 md:pl-6">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <h3 className="text-xl font-semibold mb-2">{item.title}</h3>
+                            <p className="text-sm text-gray-500 mb-1">
+                              Uploaded by {item.uploader.name} ({item.uploader.email})
+                            </p>
+                            <div className="flex flex-wrap gap-2 mb-4">
+                              <span className="bg-gray-100 text-gray-800 text-xs px-2 py-1 rounded">
+                                {item.category}
+                              </span>
+                              <span className="bg-gray-100 text-gray-800 text-xs px-2 py-1 rounded">
+                                {item.type}
+                              </span>
+                              <span className="bg-gray-100 text-gray-800 text-xs px-2 py-1 rounded">
+                                {item.size}
+                              </span>
+                              <span className="bg-gray-100 text-gray-800 text-xs px-2 py-1 rounded">
+                                {item.condition}
+                              </span>
+                            </div>
+                          </div>
+                          
+                          <div className="bg-[#8f00ff] text-white px-3 py-1 rounded-full">
+                            {item.pointValue} points
+                          </div>
+                        </div>
+                        
+                        <p className="text-gray-700 mb-4">{item.description}</p>
+                        
+                        <div className="flex flex-wrap gap-2">
+                          {item.tags && item.tags.map((tag, index) => (
+                            <span key={index} className="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded">
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                        
+                        <div className="flex justify-end mt-4 space-x-3">
+                          <button
+                            onClick={() => navigate(`/item/${item._id}`)}
+                            className="flex items-center px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                          >
+                            <Eye size={16} className="mr-2" /> View Details
+                          </button>
+                          <button
+                            onClick={() => handleRejectItem(item._id)}
+                            disabled={actionLoading}
+                            className="flex items-center px-4 py-2 border border-red-500 text-red-500 rounded-lg hover:bg-red-50"
+                          >
+                            <X size={16} className="mr-2" /> Reject
+                          </button>
+                          <button
+                            onClick={() => handleApproveItem(item._id)}
+                            disabled={actionLoading}
+                            className="flex items-center px-4 py-2 bg-[#8f00ff] text-white rounded-lg hover:bg-[#6f00c4]"
+                          >
+                            <Check size={16} className="mr-2" /> Approve
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex-1">
-                  <p className="font-semibold">{item.title}</p>
-                  <p className="text-sm text-gray-500">
-                    {item.category} • {item.size}
-                  </p>
-                  <p className="text-sm">
-                    Status:{' '}
-                    <span
-                      className={`font-medium ${
-                        item.isApproved ? 'text-green-600' : 'text-yellow-500'
-                      }`}
-                    >
-                      {item.isApproved ? 'Approved' : 'Pending'}
-                    </span>
-                  </p>
-                </div>
-                <div className="space-y-1 text-right">
-                  {!item.isApproved && (
-                    <button
-                      onClick={() => approveItem(item._id)}
-                      className="px-4 py-1 bg-green-500 text-white rounded hover:bg-green-600"
-                    >
-                      Approve
-                    </button>
-                  )}
-                  {item.isApproved && (
-                    <button
-                      onClick={() => rejectItem(item._id)}
-                      className="px-4 py-1 bg-yellow-500 text-white rounded hover:bg-yellow-600"
-                    >
-                      Reject
-                    </button>
-                  )}
-                  <button
-                    onClick={() => deleteItem(item._id)}
-                    className="px-4 py-1 bg-red-500 text-white rounded hover:bg-red-600"
-                  >
-                    Remove
-                  </button>
-                </div>
-              </div>
-            ))
+              ))}
+            </div>
           )}
         </div>
       )}

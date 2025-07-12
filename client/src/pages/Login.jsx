@@ -1,13 +1,13 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import axios from "axios";
-import { Loader } from 'lucide-react'
+import { Loader } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 const Login = () => {
     const [formData, setFormData] = useState({ email: "", password: "" });
     const [error, setError] = useState("");
     const navigate = useNavigate();
-    const [loading, setLoading] = useState(false);
+    const { login, loading } = useAuth();
 
     const handleChange = (e) => {
         setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -15,12 +15,12 @@ const Login = () => {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        try {
-            setLoading(true);
-            await axios.post("Backend Link Here!!!!!!!!!!!!!", formData, { withCredentials: true });
-            navigate("/");
-        } catch (error) {
-            setError(error.response?.data?.message || "Login failed");
+        const result = await login(formData);
+        
+        if (result.success) {
+            navigate("/dashboard");
+        } else {
+            setError(result.error);
         }
     };
 
@@ -51,11 +51,12 @@ const Login = () => {
                         required
                     />
                     {error && <p className="text-red-500">{error}</p>}
-                    <button type="submit" className="bg-[#8f00ff] text-white text-2xl p-2 text-center rounded-[10px] cursor-pointer flex items-center justify-center gap-2">Login {loading && <Loader size={15}/>}</button>
+                    <button type="submit" className="bg-[#8f00ff] text-white text-2xl p-2 text-center rounded-[10px] cursor-pointer flex items-center justify-center gap-2">
+                        Login {loading && <Loader size={15} className="animate-spin"/>}
+                    </button>
                     <p>Don't have an account? <Link to={'/register'} className="underline">Register</Link></p>
                 </form>
             </div>
-            
         </div>
     );
 };
