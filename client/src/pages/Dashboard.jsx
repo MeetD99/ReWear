@@ -44,7 +44,13 @@ const Dashboard = () => {
     try {
       await swapService.updateSwapStatus(swapId, { status });
       
-      // Refresh received requests after action
+      // Refresh all data after action
+      const itemsResponse = await userService.getUserItems();
+      setUserItems(itemsResponse.data.data);
+      
+      const swapsResponse = await userService.getUserSwaps();
+      setSwapRequests(swapsResponse.data.data);
+      
       const receivedResponse = await userService.getReceivedRequests();
       setReceivedRequests(receivedResponse.data.data);
     } catch (err) {
