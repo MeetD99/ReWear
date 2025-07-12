@@ -31,7 +31,7 @@ const LandingPage = () => {
 
         <div className="mt-8 flex justify-center gap-4 flex-wrap">
           <Link
-            to="/signup"
+            to="/login"
             className="bg-white text-indigo-600 px-6 py-2 rounded-full font-semibold hover:bg-gray-100 transition"
           >
             Start Swapping
@@ -43,7 +43,7 @@ const LandingPage = () => {
             Browse Items
           </Link>
           <Link
-            to="/add"
+            to="/add-item"
             className="bg-white text-indigo-600 px-6 py-2 rounded-full font-semibold hover:bg-gray-100 transition"
           >
             List an Item
